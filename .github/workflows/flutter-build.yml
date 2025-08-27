@@ -1,40 +1,105 @@
-
-name: Flutter Build
+name: Flutter SO Build By ЯK
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      # Step 1: Checkout repo
+      - uses: actions/checkout@v4
 
-      - name: Set up JDK
-        uses: actions/setup-java@v4
+      # Step 2: Set up Java
+      - uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: 17
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.29.2'
-
-      - name: Print Flutter version
-        run: flutter --version
-
-      - name: Create and set up Flutter project
+      # Step 3: Build & Release libflutter.so
+      - name: Build & Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          flutter create flutter_so
-          cd flutter_so
+          # Dart Version & Flutter Version mapping
+          declare -A dart_map=(
+            ["3.7.2"]="3.29.2 3.29.3"                   
+          )
+
+          # Start Markdown Table Header
+          echo "## 📦 Flutter SO Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Dart Version | Flutter Versions | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|------------------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          # Loop through Dart versions sequentially
+          for dart_ver in 3.7.2; do
+            echo "🔍 Checking existing release v${dart_ver}..."
+
+            # If release already exists then skip ⏭
+            if gh release view "v${dart_ver}" &>/dev/null; then
+              echo "✅ Release v${dart_ver} already exists, skipping..."
+              echo "| ${dart_ver} | ${dart_map[$dart_ver]} | ✅ Already Released |" >> $GITHUB_STEP_SUMMARY
+              continue
+            fi
+
+            echo "🚀 Starting build for Dart v${dart_ver}"
+            mkdir -p release/arm64 release/armeabi_v7a
+
+            # Loop through Flutter versions for this Dart version
+            for flutter_ver in ${dart_map[$dart_ver]}; do
+              echo "⚡ Building Flutter v${flutter_ver}"
+
+              # Download & extract Flutter SDK
+              wget -q https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${flutter_ver}-stable.tar.xz
+              tar xf flutter_linux_${flutter_ver}-stable.tar.xz
+              export PATH=$PWD/flutter/bin:$PATH
+
+              # Create test project & build APK
+              flutter create flutter_so >/dev/null
+              cd flutter_so
+              flutter pub get
+              flutter build apk --release --target-platform android-arm,android-arm64
+              cd ..
+
+              # Detect libflutter.so path
+              SO_ARM64=$(find flutter_so/build/app/intermediates -type f -path "*/lib/arm64-v8a/libflutter.so" | head -1)
+
+              # Save into versioned folders
+              mkdir -p "release/arm64/Flutter SO [v${flutter_ver}]"           
+              cp "$SO_ARM64" "release/arm64/Flutter SO [v${flutter_ver}]/libflutter.so"
+
+              # Cleanup Flutter SDK & project
+              rm -rf flutter flutter_so flutter_linux_${flutter_ver}-stable.tar.xz
+            done
+
+            # Prepare stylish Flutter version list for description
+            flutter_list=$(echo ${dart_map[$dart_ver]} | sed 's/ /, /g')
+
+            # Create ZIPs (clean structure)
+            cd release
+            cd arm64 && zip -qr ../libflutter_so_arm64.zip . && cd ..
+            cd armeabi_v7a && zip -qr ../libflutter_so_armeabi_v7a.zip . && cd ..
+
+            # Create GitHub Release
+            gh release create "v${dart_ver}" \
+              libflutter_so_arm64.zip \
+              libflutter_so_armeabi_v7a.zip \
+              --title "Dart v${dart_ver}" \
+              --notes "Dart v${dart_ver} 𒁍 Flutter Versions: ${flutter_list}"
+
+            cd ..
+            rm -rf release
+
+            # Add success info to summary
+            echo "| ${dart_ver} | ${flutter_list} | 🎉 Released |" >> $GITHUB_STEP_SUMMARY
+          done          cd flutter_so
           flutter pub get
 
       - name: Build APK for arm64 and armeabi-v7a
