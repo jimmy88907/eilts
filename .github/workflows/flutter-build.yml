@@ -50,7 +50,7 @@ jobs:
             fi
 
             echo "🚀 Starting build for Dart v${dart_ver}"
-            mkdir -p release/arm64 release/armeabi_v7a
+            mkdir -p release/arm64 release
 
             # Loop through Flutter versions for this Dart version
             for flutter_ver in ${dart_map[$dart_ver]}; do
@@ -85,12 +85,12 @@ jobs:
             # Create ZIPs (clean structure)
             cd release
             cd arm64 && zip -qr ../libflutter_so_arm64.zip . && cd ..
-            cd armeabi_v7a && zip -qr ../libflutter_so_armeabi_v7a.zip . && cd ..
+            
 
             # Create GitHub Release
             gh release create "v${dart_ver}" \
               libflutter_so_arm64.zip \
-              libflutter_so_armeabi_v7a.zip \
+              
               --title "Dart v${dart_ver}" \
               --notes "Dart v${dart_ver} 𒁍 Flutter Versions: ${flutter_list}"
 
